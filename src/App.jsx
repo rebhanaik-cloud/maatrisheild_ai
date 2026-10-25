@@ -5,7 +5,7 @@ import {
   FileText, Heart, HeartPulse, Home, Menu, MessageCircle, Pill, Plus,
   Search, Send, Settings, ShieldCheck, Sparkles, Stethoscope, Syringe,
   Upload, UserRound, Users, X, Flower2, MapPin, Clock, Droplets, Smile,
-  HandHeart, BookOpen, LogOut, Languages, AlertTriangle, Trash2, Loader2
+  HandHeart, BookOpen, LogOut, Languages, AlertTriangle, Trash2, ExternalLink
 } from "lucide-react";
 import {
   profileAPI,
@@ -24,9 +24,15 @@ const stages = [
 ];
 
 const navItems = [
-  ["Home", Home], ["My Journey", Activity], ["Appointments", CalendarDays],
-  ["Health Records", FileText], ["Referrals", HandHeart], ["AI Companion", MessageCircle],
-  ["Care Team", Users], ["Settings", Settings]
+  ["Home", Home],
+  ["My Journey", Activity],
+  ["Appointments", CalendarDays],
+  ["Care Logs", ClipboardList],
+  ["Health Records", FileText],
+  ["Referrals", HandHeart],
+  ["AI Companion", MessageCircle],
+  ["Care Team", Users],
+  ["Settings", Settings]
 ];
 
 function Brand({ small = false }) {
@@ -211,7 +217,6 @@ function Onboarding({ onFinish, defaultName = "" }) {
 }
 
 function App({ user, onLogout }) {
-  // Safe profile hydration
   const [profile, setProfile] = useState(() => getStoredProfile());
   const [active, setActive] = useState("Home");
   const [mobileMenu, setMobileMenu] = useState(false);
@@ -219,8 +224,27 @@ function App({ user, onLogout }) {
   const [showNotifications, setShowNotifications] = useState(false);
   const [mood, setMood] = useState("Good");
   const [symptom, setSymptom] = useState("");
-  const [checkedTasks, setCheckedTasks] = useState([0]);
   const [settingsSaved, setSettingsSaved] = useState(false);
+
+  // Task list completion: initialize empty or from localStorage (do not default to checked on reload)
+  const [checkedTasks, setCheckedTasks] = useState(() => {
+    try {
+      const stored = localStorage.getItem("maatrishield-checked-tasks");
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const toggleTask = (i) => {
+    setCheckedTasks((prev) => {
+      const next = prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i];
+      try {
+        localStorage.setItem("maatrishield-checked-tasks", JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
 
   // Real backend connected states
   const [appointments, setAppointments] = useState([]);
@@ -236,11 +260,11 @@ function App({ user, onLogout }) {
   const [messages, setMessages] = useState([
     {
       from: "ai",
-      text: "Hi! I'm your Maatri companion. I'm here to help you organise your care journey, record your notes, and prepare questions for your healthcare team. How can I support you today?",
+      text: "Hi! I'm your Maatri companion. I can help guide you through symptom tracking, fertility protocols, and prenatal precautions to prepare for your healthcare visits. How can I support you today?",
     },
   ]);
 
-  // Load backend profile if missing in local state
+  // Load backend profile
   useEffect(() => {
     async function syncProfile() {
       try {
@@ -258,7 +282,7 @@ function App({ user, onLogout }) {
     }
   }, [profile]);
 
-  // Load appointments from backend
+  // Load appointments
   const loadAppointments = useCallback(async () => {
     try {
       setAppointmentsLoading(true);
@@ -271,7 +295,7 @@ function App({ user, onLogout }) {
     }
   }, []);
 
-  // Load health notes from backend
+  // Load health notes
   const loadNotes = useCallback(async () => {
     try {
       setNotesLoading(true);
@@ -293,7 +317,6 @@ function App({ user, onLogout }) {
   const finishOnboarding = async (data) => {
     setProfile(data);
     setStoredProfile(data);
-    setActive("Home");
     try {
       const saved = await profileAPI.save(data);
       if (saved) {
@@ -305,25 +328,24 @@ function App({ user, onLogout }) {
     }
   };
 
-  const resetProfile = () => {
-    setStoredProfile(null);
-    setProfile(null);
+  const handleLogout = () => {
+    setNotes([]);
+    setAppointments([]);
+    onLogout();
   };
 
   const firstName = profile?.name || user?.email?.split("@")[0] || "there";
   const isIVF = !!profile?.ivf;
   const currentStage = stages.find((s) => s.id === profile?.stage) || stages[1];
-  const toggleTask = (i) =>
-    setCheckedTasks((prev) => (prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]));
 
   // AI Chat message sender
-  const addChatMessage = async () => {
-    const question = chatInput.trim();
+  const addChatMessage = async (customPrompt) => {
+    const question = (customPrompt || chatInput).trim();
     if (!question || chatBusy) return;
 
     setChatError("");
     setMessages((prev) => [...prev, { from: "you", text: question }]);
-    setChatInput("");
+    if (!customPrompt) setChatInput("");
     setChatBusy(true);
 
     try {
@@ -363,16 +385,17 @@ function App({ user, onLogout }) {
     setSymptomSaving(true);
     setSymptomNotice("");
     try {
+      const category = mood ? `Daily Wellbeing (${mood})` : "Symptom Log";
       const newNote = await notesAPI.create({
-        category: mood ? `Mood: ${mood}` : "Daily Check-in",
+        category,
         content: symptom.trim(),
       });
       setNotes((prev) => [newNote, ...prev]);
       setSymptom("");
-      setSymptomNotice("Your health note has been saved to your account database.");
-      setTimeout(() => setSymptomNotice(""), 4000);
+      setSymptomNotice("Your entry has been saved to your Care Logs & database.");
+      setTimeout(() => setSymptomNotice(""), 5000);
     } catch (err) {
-      alert("Could not save health note. Please check your network connection.");
+      alert("Could not save health note. Please check your connection.");
     } finally {
       setSymptomSaving(false);
     }
@@ -386,6 +409,7 @@ function App({ user, onLogout }) {
     Home: "Your care space",
     "My Journey": "Your journey",
     Appointments: "Appointments",
+    "Care Logs": "Care & Wellbeing Logs",
     "Health Records": "Health records",
     Referrals: "Care referrals",
     "AI Companion": "Your AI companion",
@@ -431,7 +455,7 @@ function App({ user, onLogout }) {
               <strong>{profile.name || user?.email}</strong>
               <small>{isIVF ? "IVF care journey" : "Maternity care journey"}</small>
             </div>
-            <button title="Sign out of account" onClick={onLogout} aria-label="Sign out">
+            <button title="Sign out of account" onClick={handleLogout} aria-label="Sign out">
               <LogOut size={16} />
             </button>
           </div>
@@ -463,7 +487,7 @@ function App({ user, onLogout }) {
             <button
               className="language-btn"
               onClick={() =>
-                alert("Language selector: English is currently active. Additional languages can be enabled in a future release.")
+                alert("Language selector: English is currently active. Additional regional languages can be enabled in a future release.")
               }
             >
               <Languages size={17} /> <span>English</span>
@@ -490,7 +514,7 @@ function App({ user, onLogout }) {
                   </p>
                   <p>
                     <span className="notice-dot lavender" />
-                    Session connected to secure database.
+                    {notes.length} care and wellbeing logs saved.
                   </p>
                   <button onClick={() => setShowNotifications(false)}>Close</button>
                 </div>
@@ -549,6 +573,9 @@ function App({ user, onLogout }) {
               stage={profile.stage}
               setProfile={finishOnboarding}
               profile={profile}
+              onAddNote={(newNote) => setNotes((prev) => [newNote, ...prev])}
+              onRefreshNotes={loadNotes}
+              setActive={setActive}
             />
           )}
 
@@ -560,11 +587,21 @@ function App({ user, onLogout }) {
             />
           )}
 
+          {active === "Care Logs" && (
+            <CareLogsPage
+              notes={notes}
+              loading={notesLoading}
+              onRefresh={loadNotes}
+              onAddNote={(newNote) => setNotes((prev) => [newNote, ...prev])}
+            />
+          )}
+
           {active === "Health Records" && (
             <RecordsPage
               notes={notes}
               loading={notesLoading}
               onRefresh={loadNotes}
+              onAddNote={(newNote) => setNotes((prev) => [newNote, ...prev])}
             />
           )}
 
@@ -581,15 +618,19 @@ function App({ user, onLogout }) {
             />
           )}
 
-          {active === "Care Team" && <CareTeamPage />}
+          {active === "Care Team" && (
+            <CareTeamPage
+              onAddNote={(newNote) => setNotes((prev) => [newNote, ...prev])}
+              setActive={setActive}
+            />
+          )}
 
           {active === "Settings" && (
             <SettingsPage
               profile={profile}
               user={user}
               onSave={finishOnboarding}
-              onReset={resetProfile}
-              onLogout={onLogout}
+              onLogout={handleLogout}
               saved={settingsSaved}
               setSaved={setSettingsSaved}
             />
@@ -622,8 +663,8 @@ function SectionHeader({ title, subtitle, action, onAction }) {
         <h3>{title}</h3>
         {subtitle && <p>{subtitle}</p>}
       </div>
-      {action && (
-        <button className="text-action" onClick={onAction}>
+      {action && onAction && (
+        <button type="button" className="text-action" onClick={onAction}>
           {action}
           <ArrowRight size={14} />
         </button>
@@ -676,7 +717,7 @@ function HomePage({
             Your health journey matters. We're here for you at every step — with care that meets you
             where you are.
           </p>
-          <div className="stage-chip">
+          <div className="stage-chip" onClick={() => setActive("My Journey")} style={{ cursor: "pointer" }}>
             <span className="chip-flower"><Flower2 size={17} /></span>{" "}
             {isIVF ? currentStage.label : "Your pregnancy & maternity care"} <ChevronRight size={15} />
           </div>
@@ -781,6 +822,69 @@ function HomePage({
               ))}
             </div>
 
+            {/* Emergency Hotline for Low or Very Low Wellbeing */}
+            {(mood === "Very low" || mood === "Low") && (
+              <div
+                style={{
+                  marginTop: "16px",
+                  padding: "16px",
+                  borderRadius: "14px",
+                  background: "#fff1f0",
+                  border: "1px solid #ffccc7",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "10px",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#cf1322", fontWeight: 700, fontSize: "12px" }}>
+                  <AlertTriangle size={18} />
+                  <span>URGENT WELLBEING SUPPORT: Feeling {mood}</span>
+                </div>
+                <p style={{ margin: 0, fontSize: "11px", color: "#5c3239", lineHeight: 1.6 }}>
+                  If you are experiencing sudden severe physical symptoms, sharp pain, heavy bleeding, or acute emotional distress, please connect with emergency healthcare immediately.
+                </p>
+                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center" }}>
+                  <a
+                    href="tel:108"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      background: "#d9534f",
+                      color: "white",
+                      padding: "8px 14px",
+                      borderRadius: "10px",
+                      fontWeight: 700,
+                      fontSize: "11px",
+                      textDecoration: "none",
+                    }}
+                  >
+                    🚨 Call 108 Emergency Ambulance
+                  </a>
+                  <a
+                    href="https://www.google.com/maps/search/nearest+emergency+maternity+hospital"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      background: "#fff",
+                      border: "1px solid #d9534f",
+                      color: "#d9534f",
+                      padding: "8px 14px",
+                      borderRadius: "10px",
+                      fontWeight: 600,
+                      fontSize: "11px",
+                      textDecoration: "none",
+                    }}
+                  >
+                    Nearest Maternity Hospital ↗
+                  </a>
+                </div>
+              </div>
+            )}
+
             <div className="symptom-entry">
               <input
                 value={symptom}
@@ -799,10 +903,21 @@ function HomePage({
                 <Plus size={16} /> {symptomSaving ? "Saving…" : "Save to log"}
               </button>
             </div>
+
             {symptomNotice && (
-              <p className="success-text margin-top">
-                <CheckCircle2 size={15} /> {symptomNotice}
-              </p>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "12px", background: "#f2fbf6", padding: "10px 14px", borderRadius: "10px" }}>
+                <span className="success-text">
+                  <CheckCircle2 size={15} /> {symptomNotice}
+                </span>
+                <button
+                  type="button"
+                  className="text-action"
+                  onClick={() => setActive("Care Logs")}
+                  style={{ fontSize: "11px" }}
+                >
+                  View in Care Logs <ArrowRight size={14} />
+                </button>
+              </div>
             )}
           </section>
         </div>
@@ -817,8 +932,13 @@ function HomePage({
                 onClick={() => setActive("Appointments")}
               />
               <QuickAction
-                icon={Upload}
-                label="Health records & notes"
+                icon={ClipboardList}
+                label="Care & Wellbeing Logs"
+                onClick={() => setActive("Care Logs")}
+              />
+              <QuickAction
+                icon={FileText}
+                label="Health records"
                 onClick={() => setActive("Health Records")}
               />
               <QuickAction
@@ -864,7 +984,7 @@ function HomePage({
                 </strong>
                 <small>
                   {hasAppointment
-                    ? `Status: ${nextApp.status || "requested"}`
+                    ? `Date: ${nextApp.appointment_at || "Logged"}`
                     : "Keep your questions in one place"}
                 </small>
               </div>
@@ -939,37 +1059,46 @@ function JourneyTrack({ isIVF, stage }) {
   );
 }
 
-function JourneyPage({ isIVF, stage, setProfile, profile }) {
+function JourneyPage({ isIVF, stage, setProfile, profile, onAddNote, onRefreshNotes, setActive }) {
   const [selected, setSelected] = useState(stage || "treatment");
   const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const [questionNote, setQuestionNote] = useState("");
   const [questionSaved, setQuestionSaved] = useState(false);
+  const [savingQuestion, setSavingQuestion] = useState(false);
 
   const handleSaveStage = async () => {
     setSaving(true);
+    setSaveSuccess(false);
     try {
       await setProfile({
         ...profile,
         stage: isIVF ? selected : "non-ivf",
       });
-      alert("Your care journey stage has been updated and saved to your account.");
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 4000);
     } finally {
       setSaving(false);
     }
   };
 
   const handleSaveQuestion = async () => {
-    if (!questionNote.trim()) return;
+    if (!questionNote.trim() || savingQuestion) return;
+    setSavingQuestion(true);
     try {
-      await notesAPI.create({
+      const created = await notesAPI.create({
         category: "Visit Question",
         content: questionNote.trim(),
       });
+      if (onAddNote) onAddNote(created);
+      if (onRefreshNotes) await onRefreshNotes();
       setQuestionNote("");
       setQuestionSaved(true);
-      setTimeout(() => setQuestionSaved(false), 3000);
+      setTimeout(() => setQuestionSaved(false), 4000);
     } catch {
       alert("Could not save question to the database.");
+    } finally {
+      setSavingQuestion(false);
     }
   };
 
@@ -1000,11 +1129,11 @@ function JourneyPage({ isIVF, stage, setProfile, profile }) {
                 <div className="timeline-copy">
                   <div className="timeline-title">
                     <h4>{s.label}</h4>
-                    {current && <span className="current-badge">YOUR STAGE</span>}
+                    {current && <span className="current-badge">YOUR ACTIVE STAGE</span>}
                   </div>
                   <p>{s.description}</p>
                   {current && (
-                    <small>Use this space to organise questions and next steps with your clinician.</small>
+                    <small>Active stage configured. Your dashboard and reminders adapt to this stage.</small>
                   )}
                 </div>
               </div>
@@ -1017,7 +1146,7 @@ function JourneyPage({ isIVF, stage, setProfile, profile }) {
         <section className="surface">
           <SectionHeader
             title="Your journey settings"
-            subtitle="Update your stage as your care progresses."
+            subtitle="Select and save your active stage to align reminders and care tracking."
           />
           {isIVF ? (
             <div className="stage-list journey-stage-list">
@@ -1039,22 +1168,29 @@ function JourneyPage({ isIVF, stage, setProfile, profile }) {
             </div>
           ) : (
             <p className="muted">
-              Your non-IVF maternity path is selected. You can adjust your care pathway in Settings anytime.
+              Your non-IVF maternity path is selected. You can switch pathways in Settings anytime.
             </p>
           )}
+
           <button
             className="primary-btn full margin-top"
             onClick={handleSaveStage}
             disabled={saving}
           >
-            {saving ? "Saving…" : "Save journey stage"} <Check size={16} />
+            {saving ? "Updating journey stage…" : "Save journey stage"} <Check size={16} />
           </button>
+
+          {saveSuccess && (
+            <p className="success-text margin-top">
+              <CheckCircle2 size={15} /> Journey stage updated to "{stages.find(s=>s.id===selected)?.label || selected}". Home space is now aligned!
+            </p>
+          )}
         </section>
 
         <section className="surface">
           <SectionHeader
             title="Questions for your next visit"
-            subtitle="Store questions here so you don't forget during clinician appointments."
+            subtitle="Store questions here; they seed directly into your Health Records and Care Logs."
           />
           <textarea
             className="notes-area"
@@ -1065,14 +1201,24 @@ function JourneyPage({ isIVF, stage, setProfile, profile }) {
           <button
             className="soft-btn margin-top"
             onClick={handleSaveQuestion}
-            disabled={!questionNote.trim()}
+            disabled={!questionNote.trim() || savingQuestion}
           >
-            Save question to records <ArrowRight size={15} />
+            {savingQuestion ? "Saving to database…" : "Save question to records"} <ArrowRight size={15} />
           </button>
           {questionSaved && (
-            <p className="success-text margin-top">
-              <CheckCircle2 size={15} /> Question saved to your Health Records.
-            </p>
+            <div style={{ marginTop: "12px", display: "flex", alignItems: "center", justifyContent: "space-between", background: "#f2fbf6", padding: "10px", borderRadius: "10px" }}>
+              <span className="success-text">
+                <CheckCircle2 size={15} /> Saved to Health Records & Care Logs!
+              </span>
+              <button
+                type="button"
+                className="text-action"
+                onClick={() => setActive("Health Records")}
+                style={{ fontSize: "11px" }}
+              >
+                View Records <ArrowRight size={14} />
+              </button>
+            </div>
           )}
         </section>
       </div>
@@ -1086,17 +1232,32 @@ function AppointmentsPage({ appointments, loading, onRefresh }) {
   const [notesText, setNotesText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
   const [deletingId, setDeletingId] = useState(null);
+
+  const todayStr = new Date().toISOString().split("T")[0];
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setErrorMsg("");
+
+    if (!date) {
+      setErrorMsg("Please select a date for your appointment.");
+      return;
+    }
+
+    if (date < todayStr) {
+      setErrorMsg("Appointments can only be scheduled for today or future dates.");
+      return;
+    }
+
     setSubmitting(true);
     setSuccess(false);
 
     try {
       await appointmentsAPI.create({
         title: kind,
-        appointment_at: date || null,
+        appointment_at: date,
         notes: notesText.trim(),
       });
       setDate("");
@@ -1105,7 +1266,7 @@ function AppointmentsPage({ appointments, loading, onRefresh }) {
       if (onRefresh) await onRefresh();
       setTimeout(() => setSuccess(false), 4000);
     } catch (err) {
-      alert(err.message || "Could not save appointment record.");
+      setErrorMsg(err.message || "Could not save appointment record.");
     } finally {
       setSubmitting(false);
     }
@@ -1130,8 +1291,6 @@ function AppointmentsPage({ appointments, loading, onRefresh }) {
         <SectionHeader
           title="Your appointments"
           subtitle="Keep visits and questions organised in your secure account."
-          action="Plan an appointment"
-          onAction={() => document.getElementById("appointment-form")?.scrollIntoView({ behavior: "smooth" })}
         />
 
         {loading ? (
@@ -1212,7 +1371,7 @@ function AppointmentsPage({ appointments, loading, onRefresh }) {
           <div className="empty-state">
             <div className="empty-illustration"><CalendarDays size={30} /></div>
             <h3>No appointments added yet</h3>
-            <p>Request a check-in or log your upcoming clinic visit details using the form.</p>
+            <p>Log your upcoming clinic visit details using the form on the right.</p>
           </div>
         )}
 
@@ -1221,19 +1380,15 @@ function AppointmentsPage({ appointments, loading, onRefresh }) {
           <p>
             <strong>Helpful care reminder</strong>
             <br />
-            Keep a short list of symptoms and questions in your Health Records to share with your clinician.
+            Keep a short list of symptoms and questions in your Care Logs to share with your clinician.
           </p>
-        </div>
-
-        <div style={{ marginTop: "14px", fontSize: "10px", color: "var(--muted)", lineHeight: 1.5 }}>
-          ℹ️ <em>Real database persistence:</em> Appointment records are stored in your user account. Clinic API integrations for automatic EHR booking require clinical coordination.
         </div>
       </section>
 
       <section className="surface" id="appointment-form">
         <SectionHeader
           title="Plan a check-in"
-          subtitle="Records are saved directly to your account database."
+          subtitle="Date is mandatory (today onwards). Records save directly to database."
         />
         <form className="form-stack" onSubmit={handleSubmit}>
           <label>
@@ -1249,22 +1404,30 @@ function AppointmentsPage({ appointments, loading, onRefresh }) {
           </label>
 
           <label>
-            Preferred or scheduled date
+            Scheduled date * (Mandatory — today onwards)
             <input
               type="date"
               value={date}
+              min={todayStr}
               onChange={(e) => setDate(e.target.value)}
+              required
             />
           </label>
 
           <label>
-            Notes for your care team
+            Notes for your care team (Optional)
             <textarea
               value={notesText}
               onChange={(e) => setNotesText(e.target.value)}
               placeholder="Questions, current medication dosages, or symptoms to discuss..."
             />
           </label>
+
+          {errorMsg && (
+            <p style={{ color: "#a22d45", fontSize: "11px", margin: 0 }}>
+              {errorMsg}
+            </p>
+          )}
 
           {success && (
             <p className="success-text">
@@ -1281,17 +1444,181 @@ function AppointmentsPage({ appointments, loading, onRefresh }) {
   );
 }
 
-function RecordsPage({ notes, loading, onRefresh }) {
+function CareLogsPage({ notes, loading, onRefresh, onAddNote }) {
+  const [filter, setFilter] = useState("All");
+  const [newLogText, setNewLogText] = useState("");
+  const [newCategory, setNewCategory] = useState("Symptom Log");
+  const [saving, setSaving] = useState(false);
+
+  const categories = ["All", "Daily Wellbeing", "Symptom Log", "Visit Question", "Care note"];
+
+  const filtered = notes.filter((n) => {
+    if (filter === "All") return true;
+    return n.category && n.category.toLowerCase().includes(filter.toLowerCase());
+  });
+
+  const handleAddLog = async (e) => {
+    e.preventDefault();
+    if (!newLogText.trim() || saving) return;
+    setSaving(true);
+    try {
+      const created = await notesAPI.create({
+        category: newCategory,
+        content: newLogText.trim(),
+      });
+      if (onAddNote) onAddNote(created);
+      if (onRefresh) await onRefresh();
+      setNewLogText("");
+    } catch {
+      alert("Failed to save log entry.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm("Are you sure you want to remove this log entry?")) return;
+    try {
+      await notesAPI.delete(id);
+      if (onRefresh) await onRefresh();
+    } catch {
+      alert("Failed to delete log entry.");
+    }
+  };
+
+  return (
+    <div className="page-columns">
+      <section className="surface wide-surface">
+        <SectionHeader
+          title="Care & Wellbeing Logs"
+          subtitle="Your complete chronological timeline of symptoms, wellbeing check-ins, and clinician questions."
+        />
+
+        <div className="filter-pills" style={{ marginTop: 0, marginBottom: "16px" }}>
+          {categories.map((c) => (
+            <button
+              key={c}
+              className={filter === c ? "filter-active" : ""}
+              onClick={() => setFilter(c)}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+
+        {loading ? (
+          <div style={{ textAlign: "center", padding: "40px", color: "var(--muted)" }}>
+            Loading care logs from database…
+          </div>
+        ) : filtered.length > 0 ? (
+          <div className="record-list">
+            {filtered.map((item) => (
+              <div className="record-row" key={item.id}>
+                <span className="record-icon" style={{ background: item.category?.includes("Wellbeing") ? "#fff0f6" : "#f2edff" }}>
+                  {item.category?.includes("Wellbeing") ? <Heart size={18} /> : <FileText size={18} />}
+                </span>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <strong style={{ fontSize: "12px" }}>{item.category}</strong>
+                    <span style={{ fontSize: "9px", color: "var(--muted)" }}>
+                      {item.created_at ? new Date(item.created_at).toLocaleString() : "Recently"}
+                    </span>
+                  </div>
+                  <p style={{ margin: "5px 0 0", fontSize: "11px", color: "#56304d", lineHeight: 1.6 }}>
+                    {item.content}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  onClick={() => handleDelete(item.id)}
+                  title="Delete log"
+                  aria-label="Delete log"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state">
+            <div className="empty-illustration"><ClipboardList size={30} /></div>
+            <h3>No entries found in this category</h3>
+            <p>Log a symptom or mood check-in using the quick entry on the right or on the Home page.</p>
+          </div>
+        )}
+      </section>
+
+      <section className="surface">
+        <SectionHeader
+          title="Add a new log entry"
+          subtitle="Directly stored in your personal database."
+        />
+        <form className="form-stack" onSubmit={handleAddLog}>
+          <label>
+            Log Category
+            <select value={newCategory} onChange={(e) => setNewCategory(e.target.value)}>
+              <option>Symptom Log</option>
+              <option>Daily Wellbeing</option>
+              <option>Visit Question</option>
+              <option>Care note</option>
+              <option>Medication note</option>
+            </select>
+          </label>
+
+          <label>
+            Log Content
+            <textarea
+              value={newLogText}
+              onChange={(e) => setNewLogText(e.target.value)}
+              placeholder="Describe physical sensations, questions, or feelings..."
+              required
+            />
+          </label>
+
+          <button className="primary-btn full" type="submit" disabled={saving}>
+            {saving ? "Saving to database…" : "Save entry to Care Logs"} <Plus size={15} />
+          </button>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function RecordsPage({ notes, loading, onRefresh, onAddNote }) {
   const [newCategory, setNewCategory] = useState("Care note");
   const [newContent, setNewContent] = useState("");
   const [savingNote, setSavingNote] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
 
-  // Simulated uploaded document labels
-  const [simulatedFiles, setSimulatedFiles] = useState([
-    "Bloodwork Report — Q3 (Simulated demo file)",
-    "Ultrasound scan summary (Simulated demo file)",
-  ]);
+  // Simulated uploaded document labels with persistent localStorage so removals stay removed!
+  const [simulatedFiles, setSimulatedFiles] = useState(() => {
+    try {
+      const stored = localStorage.getItem("maatrishield-simulated-docs");
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return [
+      "Bloodwork Report — Q3 (Simulated demo file)",
+      "Ultrasound scan summary (Simulated demo file)",
+    ];
+  });
+
+  const removeDoc = (idx) => {
+    const updated = simulatedFiles.filter((_, i) => i !== idx);
+    setSimulatedFiles(updated);
+    try {
+      localStorage.setItem("maatrishield-simulated-docs", JSON.stringify(updated));
+    } catch {}
+  };
+
+  const addDoc = (label) => {
+    if (!label?.trim()) return;
+    const updated = [label.trim(), ...simulatedFiles];
+    setSimulatedFiles(updated);
+    try {
+      localStorage.setItem("maatrishield-simulated-docs", JSON.stringify(updated));
+    } catch {}
+  };
 
   const handleAddNote = async (e) => {
     e.preventDefault();
@@ -1299,10 +1626,11 @@ function RecordsPage({ notes, loading, onRefresh }) {
 
     setSavingNote(true);
     try {
-      await notesAPI.create({
+      const created = await notesAPI.create({
         category: newCategory,
         content: newContent.trim(),
       });
+      if (onAddNote) onAddNote(created);
       setNewContent("");
       if (onRefresh) await onRefresh();
     } catch (err) {
@@ -1329,15 +1657,15 @@ function RecordsPage({ notes, loading, onRefresh }) {
     <div className="page-columns">
       <section className="surface wide-surface">
         <SectionHeader
-          title="Your health notes & symptoms"
-          subtitle="Persistent health notes stored securely in your database."
+          title="Your health notes & questions"
+          subtitle="Notes saved from My Journey, Care Logs, and this page are preserved in your database."
         />
 
         <div className="record-banner">
           <div className="record-banner-icon"><FileText size={23} /></div>
           <div>
-            <strong>Persistent Health Records</strong>
-            <p>Notes logged here or from the home check-in are saved to your account database.</p>
+            <strong>Persistent Health Records & Doctor Questions</strong>
+            <p>Every note or question you log is stored securely in your user account.</p>
           </div>
         </div>
 
@@ -1381,29 +1709,35 @@ function RecordsPage({ notes, loading, onRefresh }) {
         <div style={{ marginTop: "30px", borderTop: "1px solid #f2e6ee", paddingTop: "20px" }}>
           <SectionHeader
             title="Document Hub (Simulated Demo)"
-            subtitle="Prototype file attachment interface. Cloud storage (AWS S3/GCS with encryption) can be connected for PDF scans."
+            subtitle="Removals persist in this browser. Cloud storage (AWS S3/GCS with encryption) can be connected for PDF scans."
           />
-          <div className="record-list">
-            {simulatedFiles.map((file, i) => (
-              <div className="record-row" key={file}>
-                <span className="record-icon" style={{ background: "#fdf0f5", color: "#b94f84" }}>
-                  <FileText size={18} />
-                </span>
-                <div>
-                  <strong>{file}</strong>
-                  <small>Prototype document label · Local device simulation</small>
+          {simulatedFiles.length > 0 ? (
+            <div className="record-list">
+              {simulatedFiles.map((file, i) => (
+                <div className="record-row" key={file + i}>
+                  <span className="record-icon" style={{ background: "#fdf0f5", color: "#b94f84" }}>
+                    <FileText size={18} />
+                  </span>
+                  <div>
+                    <strong>{file}</strong>
+                    <small>Prototype document label · Persisted removal</small>
+                  </div>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    onClick={() => removeDoc(i)}
+                    aria-label="Remove item"
+                  >
+                    <X size={16} />
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  className="icon-btn"
-                  onClick={() => setSimulatedFiles((prev) => prev.filter((_, idx) => idx !== i))}
-                  aria-label="Remove item"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <p style={{ fontSize: "11px", color: "var(--muted)", margin: "10px 0" }}>
+              All simulated documents have been removed. You can add new labels below.
+            </p>
+          )}
         </div>
       </section>
 
@@ -1445,14 +1779,12 @@ function RecordsPage({ notes, loading, onRefresh }) {
             className="upload-zone"
             onClick={() => {
               const label = prompt("Enter a label for this simulated document (e.g., Blood test report):");
-              if (label?.trim()) {
-                setSimulatedFiles((prev) => [label.trim(), ...prev]);
-              }
+              if (label?.trim()) addDoc(label);
             }}
           >
             <Upload size={23} />
             <strong>Add document label</strong>
-            <small>Prototype demonstration · No binary file uploaded</small>
+            <small>Prototype demonstration · Saves label in browser</small>
           </button>
         </div>
       </section>
@@ -1462,25 +1794,48 @@ function RecordsPage({ notes, loading, onRefresh }) {
 
 function ReferralsPage() {
   const [status, setStatus] = useState("All");
-  const [referrals, setReferrals] = useState([
-    { name: "Women's health consultation", detail: "Discuss reproductive health with a qualified gynaecologist.", status: "Suggested" },
-    { name: "Fertility specialist", detail: "For IVF treatment protocols, egg retrieval, and embryo monitoring.", status: "Suggested" },
-    { name: "Maternal mental wellbeing", detail: "Empathetic emotional support for fertility and pregnancy stress.", status: "Available" },
-    { name: "Pelvic health physiotherapist", detail: "Prenatal and postpartum pelvic floor strengthening and recovery.", status: "Available" },
-  ]);
 
-  const shown = referrals.filter((r) => status === "All" || r.status === status);
+  // Persist requested referrals in localStorage so they survive page refresh!
+  const [requestedMap, setRequestedMap] = useState(() => {
+    try {
+      const stored = localStorage.getItem("maatrishield-requested-referrals");
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const referrals = [
+    { name: "Women's health consultation", detail: "Discuss reproductive health with a qualified gynaecologist.", status: "Suggested", query: "Gynecologist obstetrician clinic" },
+    { name: "Fertility specialist", detail: "For IVF treatment protocols, egg retrieval, and embryo monitoring.", status: "Suggested", query: "IVF fertility specialist clinic" },
+    { name: "Maternal mental wellbeing", detail: "Empathetic emotional support for fertility and pregnancy stress.", status: "Available", query: "Maternal mental health counselor" },
+    { name: "Pelvic health physiotherapist", detail: "Prenatal and postpartum pelvic floor strengthening and recovery.", status: "Available", query: "Pelvic floor physiotherapist" },
+  ];
+
+  const handleMarkRequested = (name) => {
+    const next = { ...requestedMap, [name]: true };
+    setRequestedMap(next);
+    try {
+      localStorage.setItem("maatrishield-requested-referrals", JSON.stringify(next));
+    } catch {}
+  };
+
+  const shown = referrals.filter((r) => {
+    const isReq = !!requestedMap[r.name];
+    const currentStatus = isReq ? "Requested" : r.status;
+    return status === "All" || currentStatus === status;
+  });
 
   return (
     <section className="surface">
       <SectionHeader
-        title="Care referrals"
-        subtitle="Keep track of specialist consultations and recommended follow-up conversations."
+        title="Care referrals & Find Services"
+        subtitle="Search nearest specialist clinics directly on Google Maps or mark for follow-up."
       />
       <div className="referral-notice">
         <ShieldCheck size={18} />
         <span>
-          Suggestions are informational guides only. A licensed healthcare professional must determine appropriate clinical referrals.
+          Suggestions are informational guides only. Click "Find on Google Maps" to locate nearby clinics.
         </span>
       </div>
 
@@ -1497,29 +1852,46 @@ function ReferralsPage() {
       </div>
 
       <div className="referral-list">
-        {shown.map((r) => (
-          <div className="referral-card" key={r.name}>
-            <div className="referral-symbol"><Stethoscope size={20} /></div>
-            <div className="referral-copy">
-              <strong>{r.name}</strong>
-              <p>{r.detail}</p>
-              <span className={`referral-status ${r.status === "Available" ? "status-green" : ""}`}>
-                {r.status}
-              </span>
+        {shown.map((r) => {
+          const isReq = !!requestedMap[r.name];
+          const currentStatus = isReq ? "Requested" : r.status;
+
+          return (
+            <div className="referral-card" key={r.name} style={{ flexWrap: "wrap" }}>
+              <div className="referral-symbol"><Stethoscope size={20} /></div>
+              <div className="referral-copy" style={{ minWidth: "220px" }}>
+                <strong>{r.name}</strong>
+                <p>{r.detail}</p>
+                <span className={`referral-status ${currentStatus === "Available" ? "status-green" : currentStatus === "Requested" ? "status-requested" : ""}`}>
+                  {currentStatus}
+                </span>
+              </div>
+
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center", marginLeft: "auto" }}>
+                {/* Real Google Maps Search Redirect */}
+                <a
+                  href={`https://www.google.com/maps/search/nearest+${encodeURIComponent(r.query || r.name)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="soft-btn"
+                  style={{ textDecoration: "none", color: "#b94f84" }}
+                >
+                  <MapPin size={14} /> Nearest on Maps <ExternalLink size={12} />
+                </a>
+
+                {/* Mark as requested with persistent localStorage */}
+                <button
+                  className="soft-btn"
+                  onClick={() => handleMarkRequested(r.name)}
+                  disabled={isReq}
+                  style={isReq ? { background: "#eaf7f1", color: "#4e9d7c", borderColor: "#c6e9d8" } : undefined}
+                >
+                  {isReq ? "✓ Requested (Saved)" : "Mark for follow-up"} <ArrowRight size={14} />
+                </button>
+              </div>
             </div>
-            <button
-              className="soft-btn"
-              onClick={() =>
-                setReferrals((prev) =>
-                  prev.map((x) => (x.name === r.name ? { ...x, status: "Requested" } : x))
-                )
-              }
-              disabled={r.status === "Requested"}
-            >
-              {r.status === "Requested" ? "Requested" : "Mark for follow-up"} <ArrowRight size={14} />
-            </button>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );
@@ -1527,10 +1899,11 @@ function ReferralsPage() {
 
 function ChatPage({ messages, input, setInput, send, busy, error }) {
   const suggestions = [
-    "What questions should I ask during an IVF consultation?",
-    "How can I manage mild morning sickness and nausea?",
-    "I'm feeling anxious about treatment results",
-    "What should I prepare for my next clinician visit?",
+    "What precautions should I take for mild lower abdominal cramping?",
+    "How can I manage morning sickness and nausea safely?",
+    "What are the warning signs of pre-eclampsia and headache?",
+    "What precautions should I follow after an IVF embryo transfer?",
+    "What medications are safe for headache or body pain?",
   ];
 
   return (
@@ -1561,7 +1934,7 @@ function ChatPage({ messages, input, setInput, send, busy, error }) {
                     : undefined
                 }
               >
-                {m.text}
+                <div style={{ whiteSpace: "pre-line" }}>{m.text}</div>
                 {m.disclaimer && (
                   <div style={{ marginTop: "6px", fontSize: "9px", opacity: 0.75, fontStyle: "italic" }}>
                     {m.disclaimer}
@@ -1596,7 +1969,7 @@ function ChatPage({ messages, input, setInput, send, busy, error }) {
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask a question or share what's on your mind..."
+            placeholder="Ask about pain, precautions, IVF protocols, or symptoms..."
             disabled={busy}
           />
           <button
@@ -1610,31 +1983,32 @@ function ChatPage({ messages, input, setInput, send, busy, error }) {
         </form>
 
         <p className="chat-safety">
-          <ShieldCheck size={14} /> This assistant is a prototype care coordinator. It does not diagnose, prescribe, or monitor emergencies.
+          <ShieldCheck size={14} /> This assistant is an educational care coordinator. It does not diagnose, prescribe, or monitor emergencies.
         </p>
       </section>
 
       <aside className="surface chat-suggestions">
-        <SectionHeader title="Things we can explore" />
+        <SectionHeader title="Things we can explore (Click to Ask)" />
         {suggestions.map((x, i) => (
           <button
             key={x}
             type="button"
             className="suggestion-row"
-            onClick={() => setInput(x)}
+            onClick={() => send(x)}
+            title="Click to ask this question"
           >
             <span>
-              {[<ClipboardList size={17} />, <Smile size={17} />, <Heart size={17} />, <CalendarDays size={17} />][i]}
+              {[<ClipboardList size={17} />, <Smile size={17} />, <AlertTriangle size={17} />, <Heart size={17} />, <Pill size={17} />][i]}
             </span>
-            {x}
-            <ChevronRight size={15} />
+            <span style={{ flex: 1 }}>{x}</span>
+            <Send size={14} style={{ color: "var(--pink)", marginLeft: "6px" }} />
           </button>
         ))}
 
         <div className="chat-warning">
           <AlertTriangle size={18} />
           <p>
-            <strong>EMERGENCY NOTICE:</strong> If you experience heavy bleeding, severe abdominal pain, chest pain, or fluid leakage, contact emergency services or your maternal emergency unit immediately. Do not wait for an app response.
+            <strong>EMERGENCY NOTICE:</strong> If you experience heavy bleeding, severe abdominal pain, chest pain, or fluid leakage, call ambulance helpline <strong>108</strong> or go to emergency maternity triage immediately.
           </p>
         </div>
       </aside>
@@ -1642,53 +2016,142 @@ function ChatPage({ messages, input, setInput, send, busy, error }) {
   );
 }
 
-function CareTeamPage() {
-  const [sent, setSent] = useState("");
+function CareTeamPage({ onAddNote, setActive }) {
+  const [activeDraft, setActiveDraft] = useState(null);
+  const [draftText, setDraftText] = useState("");
+  const [savedSuccess, setSavedSuccess] = useState("");
+
   const team = [
-    ["Care coordinator", "Helps you organise questions, records, and clinician appointments", "CC", "#EEDFF8"],
-    ["Obstetrician / Gynaecologist", "Maternal monitoring, reproductive health, and delivery care", "OB", "#F9DDE7"],
-    ["Fertility specialist", "IVF treatment protocols, egg retrieval, and embryo monitoring", "FS", "#FCE7D9"],
-    ["Wellbeing counsellor", "Emotional and mental health support through all maternal stages", "WB", "#DDEFE7"],
+    {
+      name: "Care coordinator",
+      role: "Helps you organise questions, records, and clinician appointments",
+      initial: "CC",
+      bg: "#EEDFF8",
+      query: "Maternal care coordinator hospital",
+    },
+    {
+      name: "Obstetrician / Gynaecologist",
+      role: "Maternal monitoring, reproductive health, and delivery care",
+      initial: "OB",
+      bg: "#F9DDE7",
+      query: "Obstetrician Gynecologist clinic",
+    },
+    {
+      name: "Fertility specialist",
+      role: "IVF treatment protocols, egg retrieval, and embryo monitoring",
+      initial: "FS",
+      bg: "#FCE7D9",
+      query: "IVF Fertility specialist doctor",
+    },
+    {
+      name: "Wellbeing counsellor",
+      role: "Emotional and mental health support through all maternal stages",
+      initial: "WB",
+      bg: "#DDEFE7",
+      query: "Maternal mental health counselor therapist",
+    },
   ];
+
+  const handleSaveQuestion = async (member) => {
+    if (!draftText.trim()) return;
+    try {
+      const created = await notesAPI.create({
+        category: `Questions for ${member.name}`,
+        content: draftText.trim(),
+      });
+      if (onAddNote) onAddNote(created);
+      setDraftText("");
+      setActiveDraft(null);
+      setSavedSuccess(`Question for ${member.name} saved to your Health Records & Care Logs!`);
+      setTimeout(() => setSavedSuccess(""), 4000);
+    } catch {
+      alert("Failed to save drafted question.");
+    }
+  };
 
   return (
     <section className="surface">
       <SectionHeader
-        title="Your care team"
-        subtitle="Use these roles as a guide when deciding which clinician or specialist to contact."
+        title="Your care team & Specialist Directory"
+        subtitle="Locate nearest specialists on Google Maps or draft questions for your next clinical visit."
       />
-      <div className="team-grid">
-        {team.map(([name, desc, initial, bg]) => (
-          <div className="team-card" key={name}>
-            <div className="team-avatar" style={{ background: bg }}>{initial}</div>
-            <h3>{name}</h3>
-            <p>{desc}</p>
-            <button className="soft-btn" onClick={() => setSent(name)}>
-              Prepare questions for {name} <ArrowRight size={14} />
-            </button>
-          </div>
-        ))}
-      </div>
 
-      {sent && (
-        <div className="success-panel margin-top">
-          <MessageCircle size={20} />
-          <div>
-            <strong>Question prep initiated: {sent}</strong>
-            <p>
-              You can write down questions in your Health Records tab before contacting your actual care provider.
-            </p>
-          </div>
-          <button className="icon-btn" onClick={() => setSent("")} aria-label="Dismiss">
-            <X size={16} />
+      {savedSuccess && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px", background: "#f2fbf6", padding: "12px", borderRadius: "12px" }}>
+          <span className="success-text"><CheckCircle2 size={16} /> {savedSuccess}</span>
+          <button type="button" className="text-action" onClick={() => setActive("Health Records")}>
+            View Records <ArrowRight size={14} />
           </button>
         </div>
       )}
+
+      <div className="team-grid">
+        {team.map((member) => (
+          <div className="team-card" key={member.name}>
+            <div className="team-avatar" style={{ background: member.bg }}>{member.initial}</div>
+            <h3>{member.name}</h3>
+            <p>{member.role}</p>
+
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "12px" }}>
+              {/* Google Maps Search Link */}
+              <a
+                href={`https://www.google.com/maps/search/nearest+${encodeURIComponent(member.query)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="soft-btn"
+                style={{ textDecoration: "none", color: "#b94f84" }}
+              >
+                <MapPin size={13} /> Find on Maps <ExternalLink size={12} />
+              </a>
+
+              {/* In-Card Question Composer */}
+              <button
+                type="button"
+                className="soft-btn"
+                onClick={() => {
+                  setActiveDraft(activeDraft === member.name ? null : member.name);
+                  setDraftText("");
+                }}
+              >
+                Draft Questions ✍️
+              </button>
+            </div>
+
+            {activeDraft === member.name && (
+              <div style={{ marginTop: "14px", padding: "12px", background: "#fffafc", border: "1px solid #f0dfe9", borderRadius: "10px" }}>
+                <textarea
+                  value={draftText}
+                  onChange={(e) => setDraftText(e.target.value)}
+                  placeholder={`Write down question to ask your ${member.name}...`}
+                  style={{ width: "100%", minHeight: "70px", padding: "8px", fontSize: "11px", border: "1px solid #eedee6", borderRadius: "8px", outline: "none" }}
+                />
+                <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+                  <button
+                    type="button"
+                    className="primary-btn"
+                    style={{ padding: "8px 12px", fontSize: "11px" }}
+                    onClick={() => handleSaveQuestion(member)}
+                  >
+                    Save to Health Records <Check size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    className="soft-btn"
+                    onClick={() => setActiveDraft(null)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </section>
   );
 }
 
-function SettingsPage({ profile, user, onSave, onReset, onLogout, saved, setSaved }) {
+function SettingsPage({ profile, user, onSave, onLogout, saved, setSaved }) {
   const [name, setName] = useState(profile.name || "");
   const [ivf, setIvf] = useState(!!profile.ivf);
   const [stage, setStage] = useState(profile.stage || "treatment");
@@ -1787,26 +2250,6 @@ function SettingsPage({ profile, user, onSave, onReset, onLogout, saved, setSave
             onClick={onLogout}
           >
             <LogOut size={16} /> Sign out of account
-          </button>
-        </section>
-
-        <section className="surface">
-          <SectionHeader
-            title="Reset care journey"
-            subtitle="Re-run the onboarding questions without deleting your account."
-          />
-          <div className="referral-notice">
-            <CircleHelp size={17} />
-            <span>
-              This clears your current journey stage selection so you can re-experience the onboarding questions.
-            </span>
-          </div>
-          <button
-            type="button"
-            className="soft-btn full margin-top"
-            onClick={onReset}
-          >
-            Reset journey stage
           </button>
         </section>
       </div>

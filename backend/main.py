@@ -168,7 +168,7 @@ class UserOut(BaseModel):
 
 class AppointmentIn(BaseModel):
     title: str = Field(min_length=1, max_length=160)
-    appointment_at: Optional[str] = Field(default=None, max_length=80)
+    appointment_at: str = Field(min_length=1, max_length=80, description="Mandatory appointment date (YYYY-MM-DD)")
     notes: str = Field(default='', max_length=3000)
 
 class AppointmentOut(AppointmentIn):
@@ -307,10 +307,26 @@ def list_appointments(user: User = Depends(current_user), db: Session = Depends(
 
 @app.post('/api/appointments', response_model=AppointmentOut, status_code=status.HTTP_201_CREATED)
 def create_appointment(data: AppointmentIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    date_str = data.appointment_at.strip()
+    if not date_str:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, 'Appointment date is required.')
+
+    # Enforce that appointment date can only be from today onwards
+    try:
+        parsed_date = datetime.strptime(date_str[:10], '%Y-%m-%d').date()
+        today = datetime.now(timezone.utc).date()
+        if parsed_date < today:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f'Appointment date cannot be in the past ({date_str}). Please select today or a future date.'
+            )
+    except ValueError:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, 'Invalid date format. Expected YYYY-MM-DD.')
+
     item = Appointment(
         user_id=user.id,
         title=data.title.strip()[:160],
-        appointment_at=data.appointment_at,
+        appointment_at=date_str[:80],
         notes=data.notes.strip()[:3000],
         status='requested'
     )
@@ -364,47 +380,141 @@ def assistant(data: AssistantIn, user: User = Depends(current_user)):
 
     urgent_keywords = [
         'heavy bleeding', 'chest pain', 'difficulty breathing', 'fainting',
-        'severe pain', 'suicidal', 'loss of consciousness', 'seizure', 'fluid leaking'
+        'severe pain', 'suicidal', 'loss of consciousness', 'seizure', 'fluid leaking',
+        'water broke', 'blurred vision', 'sudden severe swelling', 'reduced fetal movement',
+        'no movement', 'high fever', 'convulsion'
     ]
     urgent = any(term in text for term in urgent_keywords)
 
     if urgent:
         answer = (
-            "⚠️ URGENT HEALTH NOTICE: Your message may describe symptoms requiring immediate medical evaluation. "
-            "Please contact local emergency medical services or your nearest maternity emergency unit immediately. "
-            "Do not wait for an app response. MaatriShield AI cannot diagnose or monitor medical emergencies."
+            "🚨 URGENT HEALTH NOTICE: Your message describes symptoms that require immediate medical evaluation. "
+            "Please call emergency ambulance helpline 108 (or your local emergency services) or go directly to the nearest maternity hospital emergency unit right now. "
+            "Do not wait for a chat response. MaatriShield AI cannot diagnose or treat medical emergencies."
+        )
+    # Abdominal pain & cramping
+    elif any(w in text for w in ['abdominal pain', 'stomach pain', 'cramp', 'cramping', 'tummy pain', 'belly pain', 'round ligament']):
+        answer = (
+            "Regarding abdominal discomfort: Mild, intermittent cramping can occur as the uterus expands or round ligaments stretch (often causing quick twinges on either side when changing positions). "
+            "Precautions & Comfort Measures:\n"
+            "1. Lie on your left side with a pillow between your knees to relieve pelvic pressure.\n"
+            "2. Sip warm water and use a gently warm (never hot) water pack on your lower back.\n"
+            "3. Rest and avoid sudden jerky twisting movements.\n"
+            "⚠️ When to seek urgent care: If pain is severe, constant, sharp on one side, accompanied by fever, or paired with vaginal bleeding, contact your doctor immediately."
+        )
+    # Back & pelvic pain
+    elif any(w in text for w in ['back pain', 'backache', 'pelvic pain', 'hip pain', 'sciatica', 'joint pain']):
+        answer = (
+            "Regarding back and pelvic girdle discomfort: Pregnancy hormones (relaxin) loosen pelvic ligaments, which frequently causes lower back and hip soreness. "
+            "Precautions & Comfort Measures:\n"
+            "1. Wear supportive flat footwear with arch support; avoid high heels completely.\n"
+            "2. Practice gentle pelvic tilts and sleep on your side with a supportive maternity pillow.\n"
+            "3. Consider a supportive maternity belly belt during walking or standing.\n"
+            "⚠️ Medication Caution: Never take NSAIDs (like ibuprofen, advil, or aspirin) without explicit obstetric prescription. Consult your doctor if paracetamol/acetaminophen is recommended."
+        )
+    # Headaches, vision & pre-eclampsia
+    elif any(w in text for w in ['headache', 'migraine', 'dizzy', 'dizziness', 'lightheaded', 'vision', 'seeing spots', 'swelling']):
+        answer = (
+            "Regarding headaches and dizziness: Mild tension headaches can occur from hormonal shifts, fatigue, or dehydration. "
+            "Precautions:\n"
+            "1. Rest in a dark, quiet room and drink at least 250-500ml of water or electrolyte fluids.\n"
+            "2. Check your blood pressure if you have a home monitor.\n"
+            "⚠️ Red Flag Warning: A severe, persistent headache that does not respond to rest, accompanied by blurry vision, flashing spots, or sudden swelling of the hands/face, can be a sign of pre-eclampsia. Report to your maternal triage center immediately."
+        )
+    # Bleeding & spotting
+    elif any(w in text for w in ['bleeding', 'spotting', 'brown discharge', 'pink discharge', 'blood']):
+        answer = (
+            "Regarding vaginal spotting or bleeding: Light brownish spotting can sometimes happen after a cervical check, ultrasound, or mild implantation. "
+            "Precautions:\n"
+            "1. Use a sanitary pad (NEVER use tampons or menstrual cups during pregnancy or post-transfer).\n"
+            "2. Rest in bed and avoid sexual intercourse, lifting heavy objects, and strenuous exercise.\n"
+            "3. Monitor the color and number of pads used.\n"
+            "⚠️ Immediate Action: Any bright red bleeding, passing of tissue/clots, or bleeding accompanied by pain requires immediate evaluation by your obstetrician or emergency maternity ward."
+        )
+    # IVF & Assisted Reproduction
+    elif any(w in text for w in ['ivf', 'embryo', 'transfer', 'injection', 'egg retrieval', 'beta', 'follicle', 'progesterone', 'trigger']):
+        answer = (
+            "Regarding IVF care & injection protocols: IVF journeys require strict medication timing and gentle physical care. "
+            "Precautions:\n"
+            "1. For progesterone injections: Rotate injection sites daily, warm oil vials gently in clean hands before administration, and apply gentle pressure after.\n"
+            "2. For egg retrieval recovery: Drink electrolyte-rich fluids, eat high-protein meals, and avoid heavy core exercises.\n"
+            "3. Ovarian Hyperstimulation (OHSS) Watch: If you notice sudden rapid weight gain, severe abdominal bloating, nausea, or shortness of breath, contact your fertility specialist right away.\n"
+            "4. During the two-week wait: Prioritize gentle walks, stress reduction, and avoid testing too early before your official beta hCG blood test."
+        )
+    # Nausea, morning sickness & vomiting
+    elif any(w in text for w in ['nausea', 'morning sickness', 'vomit', 'vomiting', 'sick', 'queasy', 'appetite']):
+        answer = (
+            "Regarding nausea and morning sickness: Hormonal surges (hCG and progesterone) commonly trigger nausea, especially in weeks 6 through 14. "
+            "Precautions & Tips:\n"
+            "1. Keep dry crackers or plain biscuits by your bedside to eat a few bites before rising.\n"
+            "2. Eat small, frequent meals every 2-3 hours rather than 3 large meals.\n"
+            "3. Sip ginger tea, lemon water, or cold fluids between meals rather than with food.\n"
+            "⚠️ Dehydration Warning: If you are unable to keep any liquids down for more than 12-24 hours or show signs of dehydration (dark urine, dry mouth, dizziness), seek clinical care for hyperemesis gravidarum."
+        )
+    # Food, diet & nutrition precautions
+    elif any(w in text for w in ['food', 'diet', 'eat', 'eating', 'nutrition', 'safe to eat', 'caffeine', 'coffee', 'tea', 'fish', 'cheese']):
+        answer = (
+            "Regarding nutrition and food safety during pregnancy and fertility treatment: "
+            "Key Precautions:\n"
+            "1. Limit caffeine to under 200mg daily (approximately one 8-ounce cup of coffee).\n"
+            "2. Strictly avoid unpasteurized milk, soft cheeses (brie, feta, blue), raw/undercooked eggs, and raw sprouts to prevent Listeria and Salmonella.\n"
+            "3. Avoid high-mercury predatory fish (shark, swordfish, king mackerel); choose low-mercury options like thoroughly cooked salmon, sardines, or shrimp.\n"
+            "4. Wash all raw vegetables and fruits thoroughly, and continue taking prescribed prenatal supplements (folic acid, iron, vitamin D) as instructed."
+        )
+    # Contractions, Braxton Hicks & labor signs
+    elif any(w in text for w in ['contraction', 'contractions', 'labor', 'labour', 'braxton hicks', 'tightening']):
+        answer = (
+            "Regarding contractions and uterine tightenings: "
+            "Understanding the difference:\n"
+            "1. Braxton Hicks: Irregular, painless or mild tightenings that do not grow closer together and subside when you change position, drink water, or rest.\n"
+            "2. True Labor Contractions: Progressively stronger, regular, and closer together (following the 5-1-1 rule: contractions every 5 minutes, lasting 1 minute, for at least 1 hour).\n"
+            "⚠️ Immediate Action: If you are under 37 weeks and having regular tightenings (preterm labor risk), or if your water breaks with clear or green fluid, contact your maternity unit immediately."
+        )
+    # Medications & painkillers
+    elif any(w in text for w in ['medicine', 'medication', 'pill', 'paracetamol', 'tylenol', 'ibuprofen', 'painkiller', 'antibiotic']):
+        answer = (
+            "Regarding medication safety: "
+            "Important Precautions:\n"
+            "1. Never take NSAIDs (such as Ibuprofen, Advil, Motrin, or Aspirin) during pregnancy or IVF cycles unless specifically prescribed as low-dose therapy by your maternal-fetal medicine specialist.\n"
+            "2. Paracetamol (Acetaminophen) is generally considered the first-line mild pain reliever for occasional maternal use, but only at the lowest effective dose after confirming with your healthcare provider.\n"
+            "3. Always check any over-the-counter cough syrups, decongestants, or herbal supplements with your doctor or pharmacist first."
+        )
+    # Emotional wellbeing & anxiety
+    elif any(w in text for w in ['stress', 'anxious', 'anxiety', 'worried', 'sad', 'scared', 'alone', 'cry', 'crying', 'overwhelm', 'mental', 'depressed']):
+        answer = (
+            "Regarding emotional wellbeing: Experiencing feelings of overwhelm, anxiety, or tearfulness is extremely common during fertility treatment and pregnancy due to rapid hormonal and life transitions. "
+            "Helpful Precautions & Self-Care:\n"
+            "1. Give yourself permission to pause: try gentle 4-7-8 deep breathing exercises (inhale 4s, hold 7s, exhale slowly 8s).\n"
+            "2. Share your feelings openly with your partner, trusted friends, or care team — you do not have to carry this alone.\n"
+            "3. Consider connecting with a perinatal mental health counsellor.\n"
+            "⚠️ Support lines: If you experience overwhelming distress, panic, or thoughts of self-harm, please reach out to emergency services (108/112) or professional mental health helplines immediately."
+        )
+    # Postpartum recovery
+    elif any(w in text for w in ['postpartum', 'after birth', 'c-section', 'cesarean', 'perineal', 'stitches', 'lochia', 'breastfeeding']):
+        answer = (
+            "Regarding postpartum recovery: The fourth trimester is a vital period of physical healing and adjustment. "
+            "Precautions:\n"
+            "1. For C-section wounds: Keep the incision clean and dry; watch for redness, warmth, increasing pain, or drainage.\n"
+            "2. For perineal healing: Use warm water rinse bottles, ice packs, and sitz baths; avoid heavy lifting.\n"
+            "3. Lochia (postpartum discharge): Should transition from heavy red to pinkish-brown to yellow-white over 4-6 weeks. Large blood clots (golf-ball size) or foul odor require urgent medical review.\n"
+            "4. Stay hydrated with 2-3 liters of water daily, especially if breastfeeding."
+        )
+    # General preparation & visit questions
+    elif any(w in text for w in ['appointment', 'question', 'ask doctor', 'prepare', 'checklist', 'visit']):
+        answer = (
+            "Preparing for your healthcare check-in: Writing down questions in advance ensures you get the most out of your clinical consultation. "
+            "Suggested topics to prepare:\n"
+            "1. Changes in symptoms: Note the exact frequency and intensity of any sensations since your last visit.\n"
+            "2. Medication check: Bring a list of all supplements, dosages, and injection times.\n"
+            "3. Next milestones: Ask what developmental scans, blood panels, or protocol adjustments are scheduled next.\n"
+            "Tip: You can save questions directly to your 'Health Records' tab right here in MaatriShield to pull up during your appointment."
         )
     else:
-        if any(w in text for w in ['ivf', 'embryo', 'transfer', 'injection', 'egg retrieval', 'beta', 'follicle', 'progesterone']):
-            answer = (
-                "Regarding IVF care: Treatment protocols, medication schedules (such as progesterone or trigger injections), "
-                "and two-week wait symptoms can vary greatly from person to person. "
-                "Write down specific times and any physical sensations so your fertility specialist can provide tailored advice. "
-                "If you experience sudden severe abdominal pain, high fever, or severe bloating, notify your clinic right away."
-            )
-        elif any(w in text for w in ['nausea', 'morning sickness', 'vomit']):
-            answer = (
-                "Nausea and morning sickness are very common, especially in the first trimester. "
-                "Small, frequent meals, staying hydrated with small sips of water or electrolyte drinks, and ginger can sometimes help. "
-                "If you are unable to keep any fluids down for over 12–24 hours, contact your midwife or obstetrician to discuss hyperemesis gravidarum."
-            )
-        elif any(w in text for w in ['stress', 'anxious', 'worried', 'sad', 'scared', 'alone', 'cry', 'overwhelm']):
-            answer = (
-                "Emotional wellbeing is just as important as physical health during fertility treatment, pregnancy, and postpartum. "
-                "Feelings of worry, exhaustion, or mood swings are very normal. Please speak with your care team or a maternal mental health counsellor "
-                "— having support makes a profound difference."
-            )
-        elif any(w in text for w in ['appointment', 'question', 'ask doctor', 'prepare']):
-            answer = (
-                "Preparing for your check-in: It's helpful to write down your top 3 concerns first, list any medications or supplements you take, "
-                "and note when symptoms started. You can also save these directly in your 'Health Records' and 'Appointments' tabs here in MaatriShield."
-            )
-        else:
-            answer = (
-                "Thank you for reaching out. I am here to help you organise your maternal health questions, record your journey, "
-                "and prepare for clinician visits. Remember that this prototype cannot diagnose, recommend medication adjustments, "
-                "or replace your healthcare team. Please consult your obstetrician, fertility specialist, or midwife for medical advice."
-            )
+        answer = (
+            "Thank you for reaching out to your Maatri Companion. I can help guide you through symptom tracking, fertility protocols, and prenatal precautions to prepare for your healthcare visits. "
+            "If you are experiencing pain, cramping, nausea, or medication questions, let me know the specific details so I can provide relevant care precautions. "
+            "Remember: This platform is an educational and organizational tool; always consult your obstetrician or fertility specialist for clinical diagnoses."
+        )
 
     return {
         'answer': answer,

@@ -94,7 +94,12 @@ def main():
     assert code == 200 and res["name"] == "Test User"
     print("✔ Profile GET verified:", res)
 
-    # 9. Appointments: Create, List, Delete
+    # 9. Appointments: Past date rejected, then Create, List, Delete
+    past_app = {"title": "Checkup", "appointment_at": "2020-01-01", "notes": "Past test"}
+    code, res = api_request(base, "/api/appointments", "POST", data=past_app, token=token)
+    assert code == 400, f"Expected 400 for past date, got {code}: {res}"
+    print("✔ Past appointment date rejected with 400")
+
     app_data = {"title": "Fertility Consultation", "appointment_at": "2026-11-01", "notes": "Discuss bloodwork"}
     code, res = api_request(base, "/api/appointments", "POST", data=app_data, token=token)
     assert code == 201, f"Create appointment failed: {code} {res}"
