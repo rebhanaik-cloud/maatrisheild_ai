@@ -127,12 +127,61 @@ function App() {
     "Care Team": "Your care team", Settings: "Settings"
   };
 
-  const addChatMessage = () => {
-    if (!chatInput.trim()) return;
-    const question = chatInput.trim();
-    setMessages(prev => [...prev, { from: "you", text: question }, { from: "ai", text: "Thanks for sharing that. I can help you organise your questions and find the right care resources. For symptoms that feel severe, sudden, or worrying, contact your clinician or local emergency service now. I can't diagnose or replace professional medical advice." }]);
-    setChatInput("");
-  };
+ 
+const addChatMessage = async () => {
+  if (!chatInput.trim()) return;
+
+  const question = chatInput.trim();
+
+  setMessages(prev => [
+    ...prev,
+    { from: "you", text: question },
+  ]);
+
+  setChatInput("");
+
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_API_URL || "https://maatrisheild-ai.onrender.com"}/api/assistant`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          category: "general",
+          content: question,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error("Unable to contact the assistant.");
+    }
+
+    const data = await response.json();
+
+    setMessages(prev => [
+      ...prev,
+      {
+        from: "ai",
+        text:
+          data.response ||
+          data.message ||
+          "Your message was received. Please consult your clinician for medical advice.",
+      },
+    ]);
+  } catch (error) {
+    setMessages(prev => [
+      ...prev,
+      {
+        from: "ai",
+        text: "I'm unable to connect right now. Please try again shortly.",
+      },
+    ]);
+  }
+};
+
 
   return <div className="app-shell">
     <aside className={`sidebar ${mobileMenu ? "sidebar-open" : ""}`}>
